@@ -2,16 +2,15 @@ import type { createStoredChatOutboxReader } from "../chat/outbox-store-projecti
 import type { ProjectCatalog } from "../projects.ts";
 import type { SessionProgressCardStore } from "../session-progress-cards.ts";
 import type { SessionPullRequestSnapshotStore } from "../session-pull-requests.ts";
-import { projectSource } from "./projection.ts";
+import { projectOwner, projectSource } from "./projection.ts";
 
 export function projectProjects(
   source: Pick<ProjectCatalog, "snapshot" | "loading" | "subscribe">,
 ) {
-  return projectSource(source, {
-    read: (catalog) => ({ snapshot: catalog.snapshot, loading: catalog.loading }),
-    subscribe: (catalog, notify) => catalog.subscribe(notify),
-    equality: "revision",
-  });
+  return projectOwner(source, (catalog) => ({
+    snapshot: catalog.snapshot,
+    loading: catalog.loading,
+  }));
 }
 
 export type ProgressCardProjectionSource = {

@@ -12,19 +12,15 @@ import type { ApplicationPlacementStartup } from "../../app/session-placement-st
 import type { SidebarAttentionStore } from "../../app/sidebar-attention-store.ts";
 import type { WebPushCapability } from "../../app/web-push.ts";
 import type { SessionCapability } from "../sessions/index.ts";
-import { projectEvents, projectSource } from "./projection.ts";
+import { projectEvents, projectOwner, projectSource } from "./projection.ts";
 
 /** Connection identity and its snapshot publish through the same owner subscription. */
 export function projectGateway(source: ApplicationGateway) {
-  return projectSource(source, {
-    read: (gateway) => ({
-      snapshot: gateway.snapshot,
-      connection: gateway.connection,
-      connectionRevision: gateway.connectionRevision,
-    }),
-    subscribe: (gateway, notify) => gateway.subscribe(notify),
-    equality: "revision",
-  });
+  return projectOwner(source, (gateway) => ({
+    snapshot: gateway.snapshot,
+    connection: gateway.connection,
+    connectionRevision: gateway.connectionRevision,
+  }));
 }
 
 /** Acquiring this projection enables diagnostic capture; the last reader releases it. */
@@ -44,43 +40,26 @@ export function projectGatewayEvents(source: ApplicationGateway) {
 }
 
 export function projectApplicationConfig(source: ApplicationConfigCapability) {
-  return projectSource(source, {
-    read: (config) => config.current,
-    subscribe: (config, notify) => config.subscribe(notify),
-    equality: "revision",
-  });
+  return projectOwner(source, (config) => config.current);
 }
 
 export function projectAgentSelection(source: AgentSelectionCapability) {
-  return projectSource(source, {
-    read: (selection) => ({ state: selection.state, intentRevision: selection.intentRevision }),
-    subscribe: (selection, notify) => selection.subscribe(notify),
-    equality: "revision",
-  });
+  return projectOwner(source, (selection) => ({
+    state: selection.state,
+    intentRevision: selection.intentRevision,
+  }));
 }
 
 export function projectNavigationPreferences(source: ApplicationNavigationPreferences) {
-  return projectSource(source, {
-    read: (navigation) => navigation.snapshot,
-    subscribe: (navigation, notify) => navigation.subscribe(notify),
-    equality: "revision",
-  });
+  return projectOwner(source, (navigation) => navigation.snapshot);
 }
 
 export function projectAssistantDock(source: AssistantDock) {
-  return projectSource(source, {
-    read: (dock) => dock.openSessionKey,
-    subscribe: (dock, notify) => dock.subscribe(notify),
-    equality: Object.is,
-  });
+  return projectOwner(source, (dock) => dock.openSessionKey, Object.is);
 }
 
 export function projectChatInputOwner(source: ReturnType<typeof chatInputOwnerForContext>) {
-  return projectSource(source, {
-    read: (owner) => owner.current,
-    subscribe: (owner, notify) => owner.subscribe(notify),
-    equality: Object.is,
-  });
+  return projectOwner(source, (owner) => owner.current, Object.is);
 }
 
 /** Private display bytes stay behind readCreateMessage's live authority check. */
@@ -93,43 +72,23 @@ export function projectChatCreation(source: ApplicationChatSubmissions) {
 }
 
 export function projectOverlays(source: ApplicationOverlays) {
-  return projectSource(source, {
-    read: (overlays) => overlays.snapshot,
-    subscribe: (overlays, notify) => overlays.subscribe(notify),
-    equality: "revision",
-  });
+  return projectOwner(source, (overlays) => overlays.snapshot);
 }
 
 export function projectMentions(source: MentionsCapability) {
-  return projectSource(source, {
-    read: (mentions) => mentions.snapshot,
-    subscribe: (mentions, notify) => mentions.subscribe(notify),
-    equality: "revision",
-  });
+  return projectOwner(source, (mentions) => mentions.snapshot);
 }
 
 export function projectSidebarAttention(source: SidebarAttentionStore) {
-  return projectSource(source, {
-    read: (attention) => attention.entries,
-    subscribe: (attention, notify) => attention.subscribe(notify),
-    equality: "revision",
-  });
+  return projectOwner(source, (attention) => attention.entries);
 }
 
 export function projectScopeUpgrade(source: ScopeUpgradeCapability) {
-  return projectSource(source, {
-    read: (upgrade) => upgrade.state,
-    subscribe: (upgrade, notify) => upgrade.subscribe(notify),
-    equality: "revision",
-  });
+  return projectOwner(source, (upgrade) => upgrade.state);
 }
 
 export function projectWebPush(source: WebPushCapability) {
-  return projectSource(source, {
-    read: (push) => push.snapshot,
-    subscribe: (push, notify) => push.subscribe(notify),
-    equality: "revision",
-  });
+  return projectOwner(source, (push) => push.snapshot);
 }
 
 export type PlacementStartupProjectionSource = {

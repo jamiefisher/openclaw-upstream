@@ -3,7 +3,7 @@ import type { NativeConversationBridge } from "../../app/native-conversation-typ
 import type { NativeDeviceSettingsCapability } from "../../app/native-device-settings.ts";
 import type { NativeGatewaysCapability } from "../../app/native-gateways.runtime.ts";
 import type { NativeNotificationsCapability } from "../../app/native-notifications.ts";
-import { projectEvents, projectSource } from "./projection.ts";
+import { projectEvents, projectOwner } from "./projection.ts";
 
 export function projectNativeChatDrafts(source: NativeChatDrafts) {
   return projectEvents<NativeChatDrafts, string>(source, {
@@ -12,36 +12,20 @@ export function projectNativeChatDrafts(source: NativeChatDrafts) {
 }
 
 export function projectNativeConversation(source: NativeConversationBridge) {
-  return projectSource(source, {
-    read: (conversation) => ({
-      presentation: conversation.presentation,
-      supportsSessionActions: conversation.supportsSessionActions,
-    }),
-    subscribe: (conversation, notify) => conversation.subscribe(notify),
-    equality: "revision",
-  });
+  return projectOwner(source, (conversation) => ({
+    presentation: conversation.presentation,
+    supportsSessionActions: conversation.supportsSessionActions,
+  }));
 }
 
 export function projectNativeDeviceSettings(source: NativeDeviceSettingsCapability) {
-  return projectSource(source, {
-    read: (settings) => settings.snapshot,
-    subscribe: (settings, notify) => settings.subscribe(notify),
-    equality: "revision",
-  });
+  return projectOwner(source, (settings) => settings.snapshot);
 }
 
 export function projectNativeNotifications(source: NativeNotificationsCapability) {
-  return projectSource(source, {
-    read: (notifications) => notifications.snapshot,
-    subscribe: (notifications, notify) => notifications.subscribe(notify),
-    equality: "revision",
-  });
+  return projectOwner(source, (notifications) => notifications.snapshot);
 }
 
 export function projectNativeGateways(source: NativeGatewaysCapability) {
-  return projectSource(source, {
-    read: (gateways) => gateways.snapshot,
-    subscribe: (gateways, notify) => gateways.subscribe(notify),
-    equality: "revision",
-  });
+  return projectOwner(source, (gateways) => gateways.snapshot);
 }

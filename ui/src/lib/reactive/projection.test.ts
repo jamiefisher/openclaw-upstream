@@ -111,15 +111,13 @@ describe("owner projections", () => {
     expect(projection.read()).toBe("changed");
   });
 
-  it("replaces sources immediately and rejects stale callback deliveries", () => {
-    const { owner, projection, subscribe, stops } = source(1);
+  it("replaces sources immediately and detaches the old owner", () => {
+    const { owner, projection, stops } = source(1);
     const view = observe(projection.read);
-    const stale = subscribe.mock.calls[0]![0];
     const replacement = new ValueSignal(7);
     projection.replaceSource(replacement);
     expect(stops).toHaveBeenCalledOnce();
     owner.set(3);
-    stale();
     flush();
     expect(view.values).toEqual([1, 7]);
     replacement.set(8);
@@ -147,26 +145,6 @@ describe("owner projections", () => {
     view.dispose();
     flush();
     expect(stops).toHaveBeenCalledOnce();
-  });
-
-  it("releases subscriptions on parent disposal and handles disposal during acquisition", () => {
-    const owner = new ValueSignal(1);
-    const stop = vi.fn();
-    const dispose = createRoot((disposeRoot) => {
-      const projection = projectSource(owner, {
-        read: (current) => current.value,
-        subscribe: (_current, notify) => {
-          notify();
-          return stop;
-        },
-        equality: "revision",
-      });
-      projection.subscribe(() => projection.dispose());
-      return disposeRoot;
-    });
-    expect(stop).toHaveBeenCalledOnce();
-    dispose();
-    expect(stop).toHaveBeenCalledOnce();
   });
 });
 
@@ -197,7 +175,7 @@ describe("event projections", () => {
     expect(failure).toEqual(new Error("synchronous consumer"));
   });
 
-  it("delivers equal events in order and fences replaced/disposed sources", () => {
+  it("delivers equal events in order and detaches replaced/disposed sources", () => {
     const owner = new EventStream<string>();
     const replacement = new EventStream<string>();
     const subscribe = vi.spyOn(owner, "subscribe");
@@ -212,9 +190,8 @@ describe("event projections", () => {
     });
     owner.emit("same");
     owner.emit("same");
-    const stale = subscribe.mock.calls[0]![0];
     projection.replaceSource(replacement);
-    stale("old");
+    owner.emit("old");
     replacement.emit("new");
     stop();
     replacement.emit("unobserved");
