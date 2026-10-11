@@ -2,7 +2,6 @@ import { isPromiseLike } from "@openclaw/normalization-core/promise-like";
 import { err, ok, type Result } from "@openclaw/normalization-core/result";
 import { readDatabasePathIdentitySync } from "../../infra/sqlite-worker-identity.js";
 import { normalizeAgentId } from "../../routing/session-key.js";
-import type { AgentDatabaseRegistryChange } from "../../state/openclaw-agent-db-contract.js";
 import { retainOpenClawAgentDatabaseReadCandidates } from "../../state/openclaw-agent-db.js";
 import { resolveOpenClawAgentSqlitePath } from "../../state/openclaw-agent-db.paths.js";
 import { cloneEnvWithPlatformSemantics } from "../config-env-vars.js";
@@ -15,13 +14,9 @@ import { resolveSqliteAgentId, resolveSqliteSessionKey } from "./session-accesso
 import type {
   SessionAccessScope,
   SessionEntryReadScope,
-  SessionEntryReadOnlyWorkerScope,
   SessionEntrySummary,
 } from "./session-accessor.types.js";
-import {
-  captureCanonicalSessionReaderContinuation,
-  type CanonicalSessionReaderContinuation,
-} from "./session-canonical-key.js";
+import { captureCanonicalSessionReaderContinuation } from "./session-canonical-key.js";
 import {
   readSessionEntriesWithRetainedFacts,
   readSessionEntryWithRetainedFacts,
@@ -30,6 +25,10 @@ import {
   readAdmittedSessionEntry,
   withOrderedSessionEntriesInWorker,
 } from "./session-entry-read-ordered.js";
+import type {
+  SessionEntryReadWorkerOwner,
+  SessionStoreWorkerReader,
+} from "./session-entry-read-owner.types.js";
 import {
   captureSessionEntryReadScope,
   isNativeSessionEntryRead,
@@ -47,14 +46,12 @@ import { assertCapturedSessionEntryReadSource } from "./session-entry-read-sourc
 import type {
   SessionEntryListWorkerInput,
   SessionEntryListWorkerResult,
-  SessionEntryReadWorkerResult,
 } from "./session-entry-read.types.js";
 import {
   captureIncognitoSessionBinding,
   captureIncognitoSessionSource,
   withIncognitoSessionEntry,
   withIncognitoSessionEntrySummaries,
-  type IncognitoSessionBinding,
 } from "./session-incognito-binding.js";
 import { resolveUnsuffixedSqliteTargetFromSessionStorePath } from "./session-sqlite-target-paths.js";
 import {
@@ -70,20 +67,9 @@ import {
   type SessionHistoryWorkerLane,
 } from "./session-transcript-worker-resources.js";
 import { withSessionHistoryWorkerDatabase } from "./session-transcript-worker-runtime.js";
-import type { SessionHistoryWorkerDatabase } from "./session-transcript-worker.types.js";
 import type { InternalSessionEntry as SessionEntry } from "./types.js";
 
-export type SessionEntryReadWorkerOwner = {
-  kind: "native" | "incognito" | "file" | "unresolved";
-  incognito?: IncognitoSessionBinding;
-  assertCurrent: () => void;
-  scope?: SessionEntryReadOnlyWorkerScope;
-  source?: SessionEntryReadWorkerResult["source"];
-  selectedStore?: Readonly<Pick<SessionStoreReadCandidate, "path" | "physicalPath">>;
-  onRegistryChange?: (change: AgentDatabaseRegistryChange) => void;
-  refreshBeforeDispatch?: (assertRetainedTarget: () => void) => Promise<void>;
-  revalidateTarget?: () => Promise<void>;
-};
+export type { SessionEntryReadWorkerOwner } from "./session-entry-read-owner.types.js";
 
 /** Retain the original logical source through its asynchronous consumer and owned effects. */
 export async function withSessionEntryReadOnlyInWorker<T>(
@@ -484,18 +470,6 @@ export async function withSessionEntriesFromStoreInWorker<T>(
     { backing: input.projection === "list", lane: projectionLane, dataOnly, prepareSource },
   );
 }
-
-type SessionStoreWorkerReader = Pick<
-  SessionEntryReadWorkerOwner,
-  "onRegistryChange" | "refreshBeforeDispatch" | "revalidateTarget"
-> & {
-  reader: SessionHistoryWorkerDatabase;
-  database: PreparedSessionEntryWorkerRead["database"];
-  logicalAgentId: string;
-  selectedStore: NonNullable<SessionEntryReadWorkerOwner["selectedStore"]>;
-  continuation?: CanonicalSessionReaderContinuation;
-  assertCurrent: () => void;
-};
 
 export async function withSessionStoreReaderInWorker<T>(
   input: SessionStoreWorkerReadInput,
