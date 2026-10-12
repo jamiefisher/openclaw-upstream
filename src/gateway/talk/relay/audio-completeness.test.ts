@@ -1,6 +1,7 @@
-import { EventEmitter } from "node:events";
+import { EventEmitter, once } from "node:events";
+import type { AddressInfo } from "node:net";
 import { describe, expect, it, vi } from "vitest";
-import { WebSocket } from "ws";
+import { WebSocket, WebSocketServer } from "ws";
 import type { RealtimeVoiceBridgeCreateRequest } from "../../../talk/provider-types.js";
 import { createGatewayBroadcaster } from "../../server-broadcast.js";
 import { MAX_BUFFERED_BYTES, WEBSOCKET_CLOSE_GRACE_MS } from "../../server-constants.js";
@@ -222,5 +223,85 @@ it("retires a slow audio-completeness consumer before it can receive a completed
       connId: client.connId,
     });
     vi.useRealTimers();
+  }
+});
+
+it("sends opted-in relay ordinals and terminal count over a real local WebSocket", async () => {
+  const server = new WebSocketServer({ host: "127.0.0.1", port: 0 });
+  await once(server, "listening");
+  const address = server.address() as AddressInfo;
+  const peerConnected = once(server, "connection");
+  const peer = new WebSocket(`ws://127.0.0.1:${address.port}`);
+  await once(peer, "open");
+  const [serverSocket] = (await peerConnected) as [WebSocket];
+  const connId = "local-real-websocket";
+  const client: GatewayWsClient = {
+    connId,
+    socket: serverSocket,
+    connect: { role: "operator", scopes: ["operator.read"] } as GatewayWsClient["connect"],
+    usesSharedGatewayAuth: false,
+  };
+  const broadcaster = createGatewayBroadcaster({ clients: new GatewayClientRegistry([client]) });
+  let request: RealtimeVoiceBridgeCreateRequest | undefined;
+  const session = createTalkRealtimeRelaySession({
+    // This is the negotiated capability supplied to the relay session; no provider
+    // or installed Gateway is involved in this transport-level integration.
+    clientCapabilities: ["audio-completeness-v1"],
+    connId,
+    cfg: { agents: { entries: { main: {} } } },
+    sessionTarget: prepareTalkSessionTarget(
+      { agents: { entries: { main: {} } } },
+      "agent:main:main",
+    ),
+    providerConfig: {},
+    instructions: "brief",
+    tools: [],
+    controlSource: "transcript",
+    provider: createIdleRelayProvider((value) => {
+      request = value;
+      return makeRelayTransport();
+    }),
+    context: {
+      chatAbortControllers: new Map(),
+      broadcastToConnIds: broadcaster.broadcastToConnIds,
+    } as never,
+  });
+  activeRelaySessions.set(session.relaySessionId, connId);
+  const received = new Promise<Array<{ event: string; payload: Record<string, unknown> }>>(
+    (resolve, reject) => {
+      const frames: Array<{ event: string; payload: Record<string, unknown> }> = [];
+      const timeout = setTimeout(() => reject(new Error("Timed out waiting for relay frames")), 3000);
+      peer.on("message", (wire) => {
+        const frame = JSON.parse(String(wire)) as (typeof frames)[number];
+        frames.push(frame);
+        if (frame.payload.type === "audioDone") {
+          clearTimeout(timeout);
+          resolve(frames);
+        }
+      });
+    },
+  );
+  try {
+    expect(session.audioDelivery).toBe("audio-completeness-v1");
+    request!.onEvent?.({ direction: "server", type: "response.created", responseId: "local-1" });
+    request!.onAudio(Buffer.alloc(960 * 2 + 137));
+    request!.onResponseDone?.({ responseId: "local-1", status: "completed" });
+
+    const frames = await received;
+    const relays = frames.map(({ payload }) => payload).filter(
+      (payload) => payload.relaySessionId === session.relaySessionId,
+    );
+    expect(relays.map(({ type, output, status }) => ({ type, output, status }))).toEqual([
+      { type: "audioStarted", output: undefined, status: undefined },
+      { type: "responseStarted", output: undefined, status: undefined },
+      { type: "audio", output: { id: 1, frameCount: 0 }, status: undefined },
+      { type: "audio", output: { id: 1, frameCount: 1 }, status: undefined },
+      { type: "audio", output: { id: 1, frameCount: 2 }, status: undefined },
+      { type: "audioDone", output: { id: 1, frameCount: 3 }, status: "completed" },
+    ]);
+  } finally {
+    peer.close();
+    await stopTalkRealtimeRelaySession({ relaySessionId: session.relaySessionId, connId });
+    await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 });
