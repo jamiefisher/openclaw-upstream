@@ -161,7 +161,11 @@ it("retires a slow audio-completeness consumer before it can receive a completed
     close: vi.fn(),
     terminate: vi.fn(),
     send: vi.fn((wire: string | Buffer, options: unknown, callback?: (error?: Error) => void) => {
-      sent.push(JSON.parse(String(wire)) as (typeof sent)[number]);
+      sent.push(
+        JSON.parse(
+          typeof wire === "string" ? wire : wire.toString("utf8"),
+        ) as (typeof sent)[number],
+      );
       // Keep the bounded broadcaster queue occupied until the connection is retired.
       if (typeof options === "function") {
         return;
@@ -270,9 +274,15 @@ it("sends opted-in relay ordinals and terminal count over a real local WebSocket
   const received = new Promise<Array<{ event: string; payload: Record<string, unknown> }>>(
     (resolve, reject) => {
       const frames: Array<{ event: string; payload: Record<string, unknown> }> = [];
-      const timeout = setTimeout(() => reject(new Error("Timed out waiting for relay frames")), 3000);
+      const timeout = setTimeout(() => {
+        reject(new Error("Timed out waiting for relay frames"));
+      }, 3000);
       peer.on("message", (wire) => {
-        const frame = JSON.parse(String(wire)) as (typeof frames)[number];
+        if (!Buffer.isBuffer(wire)) {
+          reject(new Error("Expected a buffered WebSocket text frame"));
+          return;
+        }
+        const frame = JSON.parse(wire.toString("utf8")) as (typeof frames)[number];
         frames.push(frame);
         if (frame.payload.type === "audioDone") {
           clearTimeout(timeout);
@@ -288,9 +298,9 @@ it("sends opted-in relay ordinals and terminal count over a real local WebSocket
     request!.onResponseDone?.({ responseId: "local-1", status: "completed" });
 
     const frames = await received;
-    const relays = frames.map(({ payload }) => payload).filter(
-      (payload) => payload.relaySessionId === session.relaySessionId,
-    );
+    const relays = frames
+      .map(({ payload }) => payload)
+      .filter((payload) => payload.relaySessionId === session.relaySessionId);
     expect(relays.map(({ type, output, status }) => ({ type, output, status }))).toEqual([
       { type: "audioStarted", output: undefined, status: undefined },
       { type: "responseStarted", output: undefined, status: undefined },
@@ -302,6 +312,8 @@ it("sends opted-in relay ordinals and terminal count over a real local WebSocket
   } finally {
     peer.close();
     await stopTalkRealtimeRelaySession({ relaySessionId: session.relaySessionId, connId });
-    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await new Promise<void>((resolve) => {
+      server.close(() => resolve());
+    });
   }
 });
